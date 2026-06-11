@@ -27,8 +27,8 @@ This script provides a one-command way to:
 2. Pull recommendations for a chosen **lookback period** and **term**.
 3. Flatten the alternative commitment details into a tabular CSV.
 4. Materialise the embedded hourly usage of the **recommended (top)**
-   recommendation into a second CSV with one row per hour across the lookback
-   window — ready for charting or capacity planning.
+   recommendation into a second CSV with one row per hour across the API's
+   reported data range — ready for charting or capacity planning.
 
 ## Functionality
 
@@ -119,8 +119,8 @@ Columns:
 
 | Column            | Description                                                              |
 |-------------------|--------------------------------------------------------------------------|
-| `DateTime`        | One row per hour across the lookback window (UTC, hour-truncated).       |
-| `HourlyPayGoUsage`| Value from `properties.usage.charges`, aligned via `firstConsumptionDate`. Empty for hours outside the API-reported range. |
+| `DateTime`        | One row per hour across the API-reported data window `[properties.firstConsumptionDate, properties.lastConsumptionDate]` (UTC, hour-truncated). No trailing blanks. |
+| `HourlyPayGoUsage`| Value from `properties.usage.charges`, aligned via `firstConsumptionDate`. |
 
 Example (US format):
 
@@ -156,7 +156,8 @@ scope IDs (sanitised for filesystem-safe characters).
 ## Usage
 
 ```powershell
-cd C:\Data\Github\savingsplan-api
+git clone https://github.com/DirkBrinkmann/azure-savingsplan-insights.git
+cd azure-savingsplan-insights
 
 # Optional: pre-authenticate against the right tenant/subscription
 Connect-AzAccount
@@ -241,10 +242,14 @@ Done.
   lookback and term right now. Try a longer lookback (`Last60Days`) or a
   broader scope.
 
-- **Hourly CSV has empty values at the edges.**
-  Expected: `properties.usage.charges` only covers
-  `firstConsumptionDate` → `lastConsumptionDate`. Hours outside that range are
-  left blank.
+- **Hourly CSV shorter than expected.**
+  Expected: the CSV covers exactly
+  `properties.firstConsumptionDate` → `properties.lastConsumptionDate`. The API
+  typically lags wall-clock time by several hours/days, so a `Last60Days` export
+  may legitimately contain ~1,400+ rows rather than the full 60 × 24 = 1,440.
+  Check `properties.totalHours` and `properties.lastConsumptionDate` in the raw
+  JSON (export with the "Export raw JSON?" prompt set to *Yes*) to confirm the
+  window your data actually covers.
 
 ## Versioning
 
