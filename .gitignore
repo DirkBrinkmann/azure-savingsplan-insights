@@ -1,0 +1,18 @@
+# Generated export artifacts (contain real billing/subscription identifiers and usage data)
+sample/
+*-AllRecommendationDetails.csv
+*-HourlyUsage.csv
+*-TopRecommendation.md
+*-Raw.json
+
+# Blog drafts (kept locally, not published in the public repo)
+blog/
+
+# Common editor/OS noise
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+Thumbs.db
+.DS_Store
