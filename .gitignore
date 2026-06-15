@@ -5,6 +5,11 @@ sample/
 *-TopRecommendation.md
 *-Raw.json
 
+# Savings Plan analyzer artefacts (Optimize-SavingsPlanCommitment.ps1 inputs + generated reports)
+*-SavingsPlanRecommendation.md
+results.md
+HourlyUsage/
+
 # Blog drafts (kept locally, not published in the public repo)
 blog/
 

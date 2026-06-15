@@ -1,4 +1,34 @@
-v1.0.0 Dirk Brinkmann 2026-06-11
+v1.2026-06-15.0 Dirk Brinkmann
+
+# Azure Savings Plan Insights
+
+Two PowerShell scripts that, together, take you from raw Azure Cost
+Management data to an actionable Savings Plan (SP) commitment
+recommendation:
+
+| Step | Script | What it does |
+|-----:|--------|--------------|
+| 1 | [`Export-BenefitRecommendations.ps1`](./Export-BenefitRecommendations.ps1) | Calls the Azure Cost Management **Benefit Recommendations – List** REST API for a chosen scope (Billing Account / Billing Profile / Subscription / Resource Group), lookback (`Last7Days` / `Last30Days` / `Last60Days`), and term (`P1Y` / `P3Y`). Writes flat CSVs, a Markdown summary, and a per-hour Pay-As-You-Go usage series (`*-HourlyUsage.csv`). |
+| 2 | [`Optimize-SavingsPlanCommitment.ps1`](./Optimize-SavingsPlanCommitment.ps1) | Reads one or more of those `*-HourlyUsage.csv` files and computes (a) the largest **waste-free** hourly commitment and (b) the **optimum** commitment across a range of common average SP discounts (default ≈30 % conservative → ≈42 % optimistic — actual per-SKU discounts vary). Output is a Markdown report named after the inputs: `{date}-{scope}-Last{N}Days-P{T}Y-SavingsPlanRecommendation.md`. |
+
+**Typical flow:**
+
+```powershell
+# 1. Export hourly PayGo usage for the scope/lookback/term you care about
+.\Export-BenefitRecommendations.ps1
+#   -> writes 2026-06-11-SUB-…-Last60Days-P1Y-HourlyUsage.csv (and friends)
+
+# 2. Turn that usage into a commitment recommendation
+.\Optimize-SavingsPlanCommitment.ps1 -Path .
+#   -> writes 2026-06-11-SUB-…-Last60Days-P1Y-SavingsPlanRecommendation.md
+```
+
+The two scripts share a filename convention
+(`{yyyy-MM-dd}-{EA|MCA|SUB|RG}-{ids}-Last{30|60}Days-P{1|3}Y-…`) so the
+Optimizer can pick up exports directly from the folder the Exporter
+wrote to.
+
+---
 
 # Azure Benefit Recommendations Export
 
@@ -261,3 +291,152 @@ changes; the date segment tracks the last edit.
 
 - [Benefit Recommendations - List (REST API 2025-03-01)](https://learn.microsoft.com/rest/api/cost-management/benefit-recommendations/list?view=rest-cost-management-2025-03-01)
 - [Az.Accounts module](https://learn.microsoft.com/powershell/module/az.accounts/)
+
+---
+
+## Azure Savings Plan Optimizer (`Optimize-SavingsPlanCommitment.ps1`)
+
+`Optimize-SavingsPlanCommitment.ps1` analyses Azure **hourly PayGo usage**
+exports produced by `Export-BenefitRecommendations.ps1` (the
+`*-HourlyUsage.csv` files) and recommends two Savings Plan (SP) commitment
+values per file:
+
+1. **Waste-free max commitment** — the largest hourly commitment that produces
+   *zero unused SP* in the observed window (= the minimum hourly usage value).
+2. **Optimum commitment per average SP discount** — the hourly commitment that
+   maximises total savings versus pure PayGo. For an average discount `d`
+   over `N` hours of usage `U(h)` the cost is
+
+   ```
+   Cost(K, d) = N · K · (1 − d) + Σ max(0, U(h) − K)
+   ```
+
+   The analytic optimum is `K*(d) = quantile(U, d)` (i.e. the `d`-th
+   percentile of hourly usage).
+
+All commitment values are expressed in **PayGo-equivalent USD/hour**, which
+is directly comparable to the hourly usage column in the input CSV and
+matches how the Azure SP recommender reports its suggestion.
+
+### Analyzer inputs
+
+Place one or more **`*HourlyUsage.csv`** exports (as produced by
+`Export-BenefitRecommendations.ps1`) in a folder. Expected filename pattern:
+
+```
+{yyyy-MM-dd}-{EA|MCA|SUB|RG}-{id1}[-{id2}]-Last{30|60}Days-P{1|3}Y-HourlyUsage.csv
+```
+
+The script extracts:
+
+| Token         | Meaning                                                                  |
+|---------------|--------------------------------------------------------------------------|
+| `yyyy-MM-dd`  | Export date (used in section sub-headings and output filename).          |
+| `EA` / `MCA` / `SUB` / `RG` | Scope kind (billing account, billing profile, subscription, resource group). |
+| `id1[-id2]`   | Scope IDs (billing account [+ billing profile], subscription [+ RG]).    |
+| `Last30Days` / `Last60Days` | Lookback window — drives the top-level report grouping (`## 30 day recommendation` / `## 60 day recommendation`). |
+| `P1Y` / `P3Y` | SP **term** length (used to project term-level savings).                 |
+
+By convention the analyzer's default input folder is `HourlyUsage/` next to the
+script (the script accepts any folder/file via `-Path`).
+
+#### Locale auto-detection
+
+Each file is inspected independently and parsed accordingly:
+
+| Locale  | Decimal sep | Date format            | Default delimiter |
+|---------|-------------|------------------------|-------------------|
+| `de-DE` | comma       | `dd.MM.yyyy HH:mm`     | `;`               |
+| `en-US` | dot         | `MM/dd/yyyy HH:mm` or ISO `yyyy-MM-dd HH:mm` | `,` |
+
+Delimiter is sniffed from the first non-empty line; decimal/date locale is
+inferred from the first data row.
+
+CSV header must be `DateTime;HourlyPayGoUsage` (or the comma-delimited
+equivalent).
+
+### Analyzer CLI usage
+
+```powershell
+.\Optimize-SavingsPlanCommitment.ps1 [-Path <path>] [-Discounts 30,32,34,36,38,40,42] [-Out <file>]
+```
+
+* `-Path` — a single CSV file or a folder containing `*HourlyUsage.csv`
+  files. Default: the `HourlyUsage` subfolder next to the script.
+* `-Discounts` — comma-separated *average* SP discounts to model. Whole
+  percent (`30`) and fractions (`0.30`) are both accepted. Default:
+  `30,32,34,36,38,40,42` — a range of **common average** SP discounts
+  spanning **conservative (≈30 %)** to **optimistic (≈42 %)**.
+
+  > Azure Savings Plan discounts vary by SKU, region, and reservation
+  > footprint — there is no single "SP discount" for a scope. The default
+  > range therefore produces a sensitivity band rather than a single point
+  > estimate; pass your own list (e.g. `-Discounts 20,25,30`) if your
+  > workload mix justifies a different range.
+* `-Out` — output Markdown file. **When omitted, the filename is auto-derived
+  from input metadata** in the form
+  `{yyyy-MM-dd}-{scope}-Last{N}Days-P{T}Y-SavingsPlanRecommendation.md`
+  (mirroring the input file convention). Shared tokens across multiple
+  inputs are kept; differing tokens are joined with `+`
+  (e.g. `Last30+60Days`, `P1+3Y`); missing tokens fall back to today's date
+  / `MultiScope` / `LastUnknownDays` / `PUnknownY`.
+
+Examples:
+
+```powershell
+.\Optimize-SavingsPlanCommitment.ps1                                      # scan default folder
+.\Optimize-SavingsPlanCommitment.ps1 -Path .\HourlyUsage
+.\Optimize-SavingsPlanCommitment.ps1 -Path . -Discounts 20,22,24,30,35,40
+.\Optimize-SavingsPlanCommitment.ps1 -Path .\HourlyUsage\2026-06-11-SUB-…-Last30Days-P1Y-HourlyUsage.csv
+.\Optimize-SavingsPlanCommitment.ps1 -Path .\HourlyUsage -Out .\my-report.md   # explicit output path
+```
+
+### Analyzer outputs
+
+* **`{date}-{scope}-Last{N}Days-P{T}Y-SavingsPlanRecommendation.md`** —
+  combined Markdown report. Inputs are grouped by lookback window: a
+  top-level `## 30 day recommendation` and/or `## 60 day recommendation`
+  heading, then one `### {yyyy-MM-dd} — {scope label}` sub-section per
+  file containing:
+  * Metadata block (filename, locale, lookback, term, observed hours,
+    PayGo totals, scope kind / IDs).
+  * Table (a): waste-free max commitment with monthly and per-term savings
+    and waste at every requested discount.
+  * Table (b): optimum commitment per discount, with `K*`, total commitment
+    value over the term, monthly and per-term savings and waste, and
+    coverage statistics (hours with overflow / hours with waste).
+* **Console** — compact mirror of the same per-file numbers, with the date
+  + scope label on the leading line and the filename on the line below for
+  traceability.
+
+#### Reporting basis
+
+* Hours per month = `8766 / 12 = 730.5`.
+* Hours per year = `8766` (average Gregorian year).
+* Hours per term = `years × 8766` (`1Y = 8766`, `3Y = 26 298`).
+* Per-hour rates are computed from the observed lookback window and then
+  scaled to monthly and term totals. This is a linear extrapolation and
+  assumes the lookback is representative of the full term.
+
+### Analyzer assumptions and caveats
+
+* Commitment `K` is treated as **PayGo-equivalent USD/hour**.
+* **Azure SP discounts vary by SKU**, region, and reservation footprint.
+  The average discount `d` is a flat blended rate applied to every covered
+  hour; the default `-Discounts` range (≈30 % → ≈42 %) is a *sensitivity
+  band* of common average discounts (conservative → optimistic), not a
+  set of quotable rates.
+* `K_max_no_waste` is waste-free **only over the observed window**; future
+  hours below the observed minimum will produce some waste.
+* No purchase-side constraints (Azure SP commitments are entered to three
+  decimals). Round the recommendation as needed when buying.
+* The 30- or 60-day lookback may not capture seasonal peaks/troughs — treat
+  the term projection as directional, not contractual.
+
+### Analyzer files
+
+```
+Optimize-SavingsPlanCommitment.ps1            — the analyser
+*-SavingsPlanRecommendation.md                — generated reports (auto-named; gitignored)
+HourlyUsage/                                  — optional folder of Azure SP recommender exports (any lookback/term; gitignored)
+```
