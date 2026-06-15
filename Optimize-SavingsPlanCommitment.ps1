@@ -45,20 +45,27 @@
     Whole percent (`30`) and fractions (`0.30`) are both accepted.
 
 .PARAMETER Out
-    Output markdown file. When omitted, the filename is auto-derived from
-    the input metadata in the form
+    Output markdown file or destination folder. When omitted, the
+    filename is auto-derived from the input metadata in the form
     `{yyyy-MM-dd}-{scope}-Last{N}Days-P{T}Y-SavingsPlanRecommendation.md`
     (mixed inputs collapse shared tokens; differing tokens become
-    `Multi` / joined with `+`).
+    `Multi` / joined with `+`) and dropped next to the script.
+
+    If `-Out` is an existing directory, ends with a path separator
+    (`\` / `/`), or has no file extension, the script treats it as a
+    *folder* and writes the auto-derived filename inside it (creating
+    the folder if missing). Otherwise `-Out` is treated as the full
+    output file path.
 
 .EXAMPLE
     .\Optimize-SavingsPlanCommitment.ps1
     .\Optimize-SavingsPlanCommitment.ps1 -Path .\HourlyUsage
     .\Optimize-SavingsPlanCommitment.ps1 -Path . -Discounts 20,22,24,30,35,40
     .\Optimize-SavingsPlanCommitment.ps1 -Path .\HourlyUsage\2026-06-11-SUB-...-Last30Days-P1Y-HourlyUsage.csv
+    .\Optimize-SavingsPlanCommitment.ps1 -Path 'C:\Reports\HourlyUsage\' -Out 'C:\Reports\HourlyUsage\'
 
 .NOTES
-    Version: v3.2026-06-15.0
+    Version: v4.2026-06-15.0
     Author : Dirk Brinkmann
 #>
 
@@ -597,7 +604,7 @@ $md = [System.Text.StringBuilder]::new()
 [void]$md.AppendLine('# Azure Savings Plan — Optimization Results')
 [void]$md.AppendLine('')
 [void]$md.AppendLine("_Generated: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))_  ")
-[void]$md.AppendLine('_Script: `Optimize-SavingsPlanCommitment.ps1` v3.2026-06-15.0_  ')
+[void]$md.AppendLine('_Script: `Optimize-SavingsPlanCommitment.ps1` v4.2026-06-15.0_  ')
 $discountPctList = (@($discountList | ForEach-Object { Format-Pct $_ })) -join ', '
 $dMin = Format-Pct ($discountList | Measure-Object -Minimum).Minimum
 $dMax = Format-Pct ($discountList | Measure-Object -Maximum).Maximum
@@ -657,8 +664,30 @@ foreach ($k in $keys) {
 [void]$md.AppendLine('* `K*(d) = quantile(U, d)` is the analytic optimum of `Cost(K)=N·K·(1−d) + Σ max(0, U−K)`.')
 [void]$md.AppendLine('')
 
+$autoName = New-OutputFileName -Entries $metas
 if ([string]::IsNullOrWhiteSpace($Out)) {
-    $Out = Join-Path $PSScriptRoot (New-OutputFileName -Entries $metas)
+    # No -Out at all: drop alongside the script.
+    $Out = Join-Path $PSScriptRoot $autoName
+} else {
+    # -Out provided. Treat it as a directory if it either already exists
+    # as one, ends with a path separator, or has no file extension.
+    $endsWithSep = ($Out.EndsWith([IO.Path]::DirectorySeparatorChar) -or
+                    $Out.EndsWith([IO.Path]::AltDirectorySeparatorChar))
+    $isExistingDir = (Test-Path -LiteralPath $Out -PathType Container)
+    $hasExt = -not [string]::IsNullOrEmpty([IO.Path]::GetExtension($Out))
+    if ($endsWithSep -or $isExistingDir -or -not $hasExt) {
+        $dir = $Out.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+        if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        $Out = Join-Path $dir $autoName
+    } else {
+        # Treat as a full file path; ensure the parent directory exists.
+        $parent = [IO.Path]::GetDirectoryName($Out)
+        if ($parent -and -not (Test-Path -LiteralPath $parent -PathType Container)) {
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+        }
+    }
 }
 
 Set-Content -LiteralPath $Out -Value $md.ToString() -Encoding UTF8

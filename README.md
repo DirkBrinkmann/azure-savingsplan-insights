@@ -373,13 +373,16 @@ equivalent).
   > range therefore produces a sensitivity band rather than a single point
   > estimate; pass your own list (e.g. `-Discounts 20,25,30`) if your
   > workload mix justifies a different range.
-* `-Out` — output Markdown file. **When omitted, the filename is auto-derived
-  from input metadata** in the form
+* `-Out` — output Markdown file **or destination folder**. When omitted,
+  the filename is auto-derived from input metadata in the form
   `{yyyy-MM-dd}-{scope}-Last{N}Days-P{T}Y-SavingsPlanRecommendation.md`
-  (mirroring the input file convention). Shared tokens across multiple
-  inputs are kept; differing tokens are joined with `+`
-  (e.g. `Last30+60Days`, `P1+3Y`); missing tokens fall back to today's date
-  / `MultiScope` / `LastUnknownDays` / `PUnknownY`.
+  (mirroring the input file convention) and dropped next to the script.
+  Shared tokens across multiple inputs are kept; differing tokens are
+  joined with `+` (e.g. `Last30+60Days`, `P1+3Y`); missing tokens fall
+  back to today's date / `MultiScope` / `LastUnknownDays` / `PUnknownY`.
+  If `-Out` is an existing directory, ends with `\` / `/`, or has no
+  file extension, it is treated as a folder and the auto-derived
+  filename is written inside it (the folder is created if missing).
 
 Examples:
 
