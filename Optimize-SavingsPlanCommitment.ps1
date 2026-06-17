@@ -65,7 +65,7 @@
     .\Optimize-SavingsPlanCommitment.ps1 -Path 'C:\Reports\HourlyUsage\' -Out 'C:\Reports\HourlyUsage\'
 
 .NOTES
-    Version: v4.2026-06-15.0
+    Version: v5.2026-06-17.0
     Author : Dirk Brinkmann
 #>
 
@@ -461,6 +461,7 @@ function Get-FileSectionMarkdown {
     [void]$sb.AppendLine("| PayGo total (observed) | $(Format-Money $totalPaygo) |")
     [void]$sb.AppendLine("| PayGo /hour | min $(Format-Money $uMin) · mean $(Format-Money $uMean) · max $(Format-Money $uMax) · σ $(Format-Money $uStd) |")
     [void]$sb.AppendLine("| Projected PayGo over term | $(Format-Money ($uMean * $termH)) |")
+    [void]$sb.AppendLine("| Reporting month | 8,766 / 12 = 730.5 hours (average Gregorian year / 12) |")
     [void]$sb.AppendLine('')
 
     # ---- (a) Waste-free max ----
@@ -483,10 +484,27 @@ function Get-FileSectionMarkdown {
     [void]$sb.AppendLine('')
     [void]$sb.AppendLine('``K*(d) = quantile(U, d)`` — analytic optimum.')
     [void]$sb.AppendLine('')
-    [void]$sb.AppendLine("| Discount | K* /hr | Commitment value over term | Monthly savings | Monthly waste | $termLabel savings | $termLabel waste | Hrs overflow | Hrs with waste |")
-    [void]$sb.AppendLine('|---|---:|---:|---:|---:|---:|---:|---:|---:|')
+    [void]$sb.AppendLine("| Discount | K* /hr | Commitment value over term | Monthly savings | Monthly waste | $termLabel savings | $termLabel waste | Hrs w/ overflow /mo | Overflow % | Hrs w/ waste /mo | Waste % |")
+    [void]$sb.AppendLine('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|')
+
+    # Reference row: waste-free max commitment (from section a) for comparison.
+    $nwOverflow = 0; $nwWaste = 0
+    foreach ($u in $usage) {
+        if ($u -gt $wf.KNoWaste) { $nwOverflow++ }
+        elseif ($u -lt $wf.KNoWaste) { $nwWaste++ }
+    }
+    $nwOverflowMo = $nwOverflow * $HoursPerMonth / $n
+    $nwOverflowPct = $nwOverflow / $n * 100
+    $nwWasteMo = $nwWaste * $HoursPerMonth / $n
+    $nwWastePct = $nwWaste / $n * 100
+    [void]$sb.AppendLine("| _(waste-free)_ | $(Format-Money $wf.KNoWaste) | $(Format-Money ($wf.KNoWaste * $termH)) | — | — | — | — | $($nwOverflowMo.ToString('N1', $Inv)) | $($nwOverflowPct.ToString('N1', $Inv))% | $($nwWasteMo.ToString('N1', $Inv)) | $($nwWastePct.ToString('N1', $Inv))% |")
+
     foreach ($r in $opts) {
-        [void]$sb.AppendLine("| $(Format-Pct $r.Discount) | $(Format-Money $r.KStar) | $(Format-Money ($r.KStar * $termH)) | $(Format-Money ($r.SavingsPerHr * $HoursPerMonth)) | $(Format-Money ($r.WastePerHr * $HoursPerMonth)) | $(Format-Money ($r.SavingsPerHr * $termH)) | $(Format-Money ($r.WastePerHr * $termH)) | $(Format-Int $r.HrsOverflow) | $(Format-Int $r.HrsWaste) |")
+        $overflowMo  = $r.HrsOverflow * $HoursPerMonth / $n
+        $overflowPct = $r.HrsOverflow / $n * 100
+        $wasteMo     = $r.HrsWaste * $HoursPerMonth / $n
+        $wastePct    = $r.HrsWaste / $n * 100
+        [void]$sb.AppendLine("| $(Format-Pct $r.Discount) | $(Format-Money $r.KStar) | $(Format-Money ($r.KStar * $termH)) | $(Format-Money ($r.SavingsPerHr * $HoursPerMonth)) | $(Format-Money ($r.WastePerHr * $HoursPerMonth)) | $(Format-Money ($r.SavingsPerHr * $termH)) | $(Format-Money ($r.WastePerHr * $termH)) | $($overflowMo.ToString('N1', $Inv)) | $($overflowPct.ToString('N1', $Inv))% | $($wasteMo.ToString('N1', $Inv)) | $($wastePct.ToString('N1', $Inv))% |")
     }
     [void]$sb.AppendLine('')
     return $sb.ToString().TrimEnd()
@@ -516,8 +534,21 @@ function Write-ConsoleSection {
         Write-Host ("      {0,4}: monthly save {1,10}  waste {2,8}  | term save {3,12}  waste {4,10}" -f (Format-Pct $d), (Format-Money ($r.SavingsPerHr * $HoursPerMonth)), (Format-Money ($r.WastePerHr * $HoursPerMonth)), (Format-Money ($r.SavingsPerHr * $termH)), (Format-Money ($r.WastePerHr * $termH)))
     }
     Write-Host '  (b) Optimum K*(d):'
+    # Waste-free reference line
+    $nwOverflow = 0; $nwWaste = 0
+    foreach ($u in $usage) {
+        if ($u -gt $wf.KNoWaste) { $nwOverflow++ }
+        elseif ($u -lt $wf.KNoWaste) { $nwWaste++ }
+    }
+    $nwOvMo = ($nwOverflow * $HoursPerMonth / $n).ToString('N1', $Inv)
+    $nwOvPct = ($nwOverflow / $n * 100).ToString('N1', $Inv)
+    Write-Host ("      (ref): K*={0,8}/hr ({1,12} over term)  overflow {2,5} hrs/mo ({3}%)  waste {4,5} hrs/mo ({5}%)" -f (Format-Money $wf.KNoWaste), (Format-Money ($wf.KNoWaste * $termH)), $nwOvMo, $nwOvPct, '0.0', '0.0')
     foreach ($r in $opts) {
-        Write-Host ("      {0,4}: K*={1,8}/hr ({2,12} over term)  monthly save {3,10}  waste {4,7}" -f (Format-Pct $r.Discount), (Format-Money $r.KStar), (Format-Money ($r.KStar * $termH)), (Format-Money ($r.SavingsPerHr * $HoursPerMonth)), (Format-Money ($r.WastePerHr * $HoursPerMonth)))
+        $ovMo  = ($r.HrsOverflow * $HoursPerMonth / $n).ToString('N1', $Inv)
+        $ovPct = ($r.HrsOverflow / $n * 100).ToString('N1', $Inv)
+        $wsMo  = ($r.HrsWaste * $HoursPerMonth / $n).ToString('N1', $Inv)
+        $wsPct = ($r.HrsWaste / $n * 100).ToString('N1', $Inv)
+        Write-Host ("      {0,4}: K*={1,8}/hr ({2,12} over term)  monthly save {3,10}  waste {4,7}  overflow {5,5}/mo ({6}%)  waste {7,5}/mo ({8}%)" -f (Format-Pct $r.Discount), (Format-Money $r.KStar), (Format-Money ($r.KStar * $termH)), (Format-Money ($r.SavingsPerHr * $HoursPerMonth)), (Format-Money ($r.WastePerHr * $HoursPerMonth)), $ovMo, $ovPct, $wsMo, $wsPct)
     }
 }
 
@@ -604,7 +635,7 @@ $md = [System.Text.StringBuilder]::new()
 [void]$md.AppendLine('# Azure Savings Plan — Optimization Results')
 [void]$md.AppendLine('')
 [void]$md.AppendLine("_Generated: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))_  ")
-[void]$md.AppendLine('_Script: `Optimize-SavingsPlanCommitment.ps1` v4.2026-06-15.0_  ')
+[void]$md.AppendLine('_Script: `Optimize-SavingsPlanCommitment.ps1` v5.2026-06-17.0_  ')
 $discountPctList = (@($discountList | ForEach-Object { Format-Pct $_ })) -join ', '
 $dMin = Format-Pct ($discountList | Measure-Object -Minimum).Minimum
 $dMax = Format-Pct ($discountList | Measure-Object -Maximum).Maximum
@@ -612,6 +643,13 @@ $dMax = Format-Pct ($discountList | Measure-Object -Maximum).Maximum
 [void]$md.AppendLine('_Commitment K reported in **PayGo-equivalent USD/hour** (matches Azure SP recommender output)._')
 [void]$md.AppendLine('')
 [void]$md.AppendLine("> **About the discount range.** Azure Savings Plan discounts vary by SKU, region, and reservation footprint — there is no single ""SP discount"" for a given scope. The default range above spans **common average** SP discounts from **conservative ($dMin)** to **optimistic ($dMax)**, so the recommendation reads as a *sensitivity band* rather than a single point estimate. Pass your own list via ``-Discounts`` (e.g. ``-Discounts 20,25,30``) if your workload mix justifies a different range.")
+[void]$md.AppendLine('')
+[void]$md.AppendLine('> **How to read the Savings and Waste columns.**')
+[void]$md.AppendLine('> ')
+[void]$md.AppendLine('> * **Savings** = PayGo cost − SP cost. This is **already net** (waste is baked in). A higher commitment increases savings *up to a point*; beyond the optimum, rising waste erodes further gains.')
+[void]$md.AppendLine('> * **Waste (USD)** = unused commitment capacity × (1 − discount). For each hour where usage falls below the commitment `K`, you pay for capacity you did not consume — but at the discounted rate, not the PayGo rate, hence `(K − U(h)) × (1 − d)`.')
+[void]$md.AppendLine('> * Savings and waste are **not additive** — waste is a *subset* of the commitment cost that produced no coverage. You do not need to subtract waste from savings; the savings figure already accounts for it.')
+[void]$md.AppendLine('> * **Hrs w/ overflow /mo** and **Hrs w/ waste /mo** are *frequency* counts: the number of hours per month where usage exceeds the commitment (overflow) or falls below it (waste). They tell you *how often* overflow or waste occurs — not the duration within an hour. The input data is hourly granularity, so sub-hour breakdown is not available. The dollar magnitude of waste is captured separately in the **Monthly waste (USD)** column.')
 [void]$md.AppendLine('')
 [void]$md.AppendLine('## Inputs')
 [void]$md.AppendLine('')
@@ -662,6 +700,7 @@ foreach ($k in $keys) {
 [void]$md.AppendLine('* Monthly and term figures are linear extrapolations of the **observed per-hour rate** during the lookback window. They assume the lookback is representative of the term.')
 [void]$md.AppendLine('* `K_max_no_waste` is the largest commitment with zero waste in the observed window; future usage dips below the observed minimum will still cause waste.')
 [void]$md.AppendLine('* `K*(d) = quantile(U, d)` is the analytic optimum of `Cost(K)=N·K·(1−d) + Σ max(0, U−K)`.')
+[void]$md.AppendLine('* **Waste (USD)** is the dollar value of unused commitment capacity: for each hour where actual usage `U(h)` is below the commitment `K`, the wasted amount is `(K − U(h)) × (1 − d)`. The `(1 − d)` factor reflects that the commitment is purchased at a discounted rate, so only the discounted portion of the unused capacity is lost. Monthly waste = sum of per-hour waste across all observed hours, scaled to 730.5 h.')
 [void]$md.AppendLine('')
 
 $autoName = New-OutputFileName -Entries $metas

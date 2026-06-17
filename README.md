@@ -394,6 +394,90 @@ Examples:
 .\Optimize-SavingsPlanCommitment.ps1 -Path .\HourlyUsage -Out .\my-report.md   # explicit output path
 ```
 
+### Sample output
+
+<details>
+<summary>Click to expand a sample <code>*-SavingsPlanRecommendation.md</code> report</summary>
+
+```markdown
+# Azure Savings Plan — Optimization Results
+
+_Generated: 2026-06-17 10:45_
+_Script: `Optimize-SavingsPlanCommitment.ps1` v5.2026-06-17.0_
+_Discounts analysed: 30%, 32%, 34%, 36%, 38%, 40%, 42%_
+_Commitment K reported in **PayGo-equivalent USD/hour** (matches Azure SP recommender output)._
+
+> **About the discount range.** Azure Savings Plan discounts vary by SKU, region, and
+> reservation footprint — there is no single "SP discount" for a given scope. The default
+> range spans common average SP discounts from **conservative (30%)** to **optimistic (42%)**,
+> so the recommendation reads as a *sensitivity band* rather than a single point estimate.
+
+> **How to read the Savings and Waste columns.**
+>
+> * **Savings** = PayGo cost − SP cost. This is **already net** (waste is baked in).
+> * **Waste (USD)** = unused commitment capacity × (1 − discount).
+> * Savings and waste are **not additive** — waste is a subset of the commitment cost.
+> * **Hrs w/ overflow /mo** and **Hrs w/ waste /mo** are frequency counts (how often,
+>   not duration).
+
+## Inputs
+
+| File | Date | Scope | Lookback | Term | Locale |
+|---|---|---|---|---|---|
+| `2026-06-11-MCA-12345678-BP1-Last60Days-P3Y-HourlyUsage.csv` | 2026-06-11 | Billing Account / Billing Profile `12345678-BP1` | 60 d | 3 y | en-US |
+
+## 60 day recommendation
+
+### 2026-06-11 — Billing Account / Billing Profile 12345678-BP1
+
+| Metadata | Value |
+|---|---|
+| Source file | `2026-06-11-MCA-12345678-BP1-Last60Days-P3Y-HourlyUsage.csv` |
+| Export date (filename) | 2026-06-11 |
+| Scope (filename) | Billing Account / Billing Profile — `12345678-BP1` |
+| Locale detected | `en-US` (delimiter `,`, date `yyyy-MM-ddTHH:mm`) |
+| Lookback (filename) | 60 days |
+| SP term (filename) | 3 year(s) — 26,298 h |
+| Observed rows | 1,440 hours (60.00 days) |
+| Date range | 2026-04-11 00:00 → 2026-06-09 23:00 |
+| PayGo total (observed) | $36,803.89 |
+| PayGo /hour | min $13.50 · mean $25.56 · max $36.47 · σ $7.80 |
+| Projected PayGo over term | $672,130.99 |
+| Reporting month | 8,766 / 12 = 730.5 hours (average Gregorian year / 12) |
+
+### (a) Waste-free max commitment
+
+`K_max_no_waste` = min hourly PayGo usage = **$13.50 / hour** (PayGo-equivalent).
+
+Commitment value over 3-year: **$355,033.52**.
+
+| Discount | Monthly savings | Monthly waste | 3-year savings | 3-year waste |
+|---|---:|---:|---:|---:|
+| 30% | $2,958.61 | $0.00 | $106,510.06 | $0.00 |
+| 34% | $3,353.09 | $0.00 | $120,711.40 | $0.00 |
+| 38% | $3,747.58 | $0.00 | $134,912.74 | $0.00 |
+| 42% | $4,142.06 | $0.00 | $149,114.08 | $0.00 |
+
+### (b) Optimum commitment per discount
+
+`K*(d) = quantile(U, d)` — analytic optimum.
+
+| Discount | K* /hr | Commitment /term | Monthly savings | Monthly waste | 3-yr savings | 3-yr waste | Hrs w/ overflow /mo | Overflow % | Hrs w/ waste /mo | Waste % |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| _(waste-free)_ | $13.50 | $355,034 | — | — | — | — | 730.0 | 99.9% | 0.0 | 0.0% |
+| 30% | $18.72 | $492,283 | $3,519 | $409 | $126,676 | $14,706 | 511.4 | 70.0% | 219.2 | 30.0% |
+| 34% | $19.47 | $511,958 | $4,076 | $501 | $146,719 | $18,049 | 481.9 | 66.0% | 248.6 | 34.0% |
+| 38% | $20.24 | $532,242 | $4,656 | $596 | $167,621 | $21,471 | 453.0 | 62.0% | 277.5 | 38.0% |
+| 42% | $20.92 | $550,036 | $5,257 | $673 | $189,257 | $24,220 | 423.6 | 58.0% | 306.9 | 42.0% |
+```
+
+**Key takeaway from this sample:** at a 36 % average SP discount, committing **$19.88 /hr**
+(~$540 k over 3 years) yields **$4,363 /month net savings** versus pure PayGo — with
+about 36 % of hours experiencing some waste (worth ~$554 /month, already deducted from
+the savings figure).
+
+</details>
+
 ### Analyzer outputs
 
 * **`{date}-{scope}-Last{N}Days-P{T}Y-SavingsPlanRecommendation.md`** —
@@ -407,7 +491,8 @@ Examples:
     and waste at every requested discount.
   * Table (b): optimum commitment per discount, with `K*`, total commitment
     value over the term, monthly and per-term savings and waste, and
-    coverage statistics (hours with overflow / hours with waste).
+    **monthly overflow/waste hours with percentages**. The waste-free max
+    commitment from table (a) appears as the first row for reference.
 * **Console** — compact mirror of the same per-file numbers, with the date
   + scope label on the leading line and the filename on the line below for
   traceability.
