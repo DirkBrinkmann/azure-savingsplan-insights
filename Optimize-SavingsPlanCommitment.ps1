@@ -65,7 +65,7 @@
     .\Optimize-SavingsPlanCommitment.ps1 -Path 'C:\Reports\HourlyUsage\' -Out 'C:\Reports\HourlyUsage\'
 
 .NOTES
-    Version: v5.2026-06-17.0
+    Version: v5.2026-06-22.0
     Author : Dirk Brinkmann
 #>
 
@@ -635,7 +635,7 @@ $md = [System.Text.StringBuilder]::new()
 [void]$md.AppendLine('# Azure Savings Plan — Optimization Results')
 [void]$md.AppendLine('')
 [void]$md.AppendLine("_Generated: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))_  ")
-[void]$md.AppendLine('_Script: `Optimize-SavingsPlanCommitment.ps1` v5.2026-06-17.0_  ')
+[void]$md.AppendLine('_Script: `Optimize-SavingsPlanCommitment.ps1` v5.2026-06-22.0_  ')
 $discountPctList = (@($discountList | ForEach-Object { Format-Pct $_ })) -join ', '
 $dMin = Format-Pct ($discountList | Measure-Object -Minimum).Minimum
 $dMax = Format-Pct ($discountList | Measure-Object -Maximum).Maximum
@@ -650,6 +650,12 @@ $dMax = Format-Pct ($discountList | Measure-Object -Maximum).Maximum
 [void]$md.AppendLine('> * **Waste (USD)** = unused commitment capacity × (1 − discount). For each hour where usage falls below the commitment `K`, you pay for capacity you did not consume — but at the discounted rate, not the PayGo rate, hence `(K − U(h)) × (1 − d)`.')
 [void]$md.AppendLine('> * Savings and waste are **not additive** — waste is a *subset* of the commitment cost that produced no coverage. You do not need to subtract waste from savings; the savings figure already accounts for it.')
 [void]$md.AppendLine('> * **Hrs w/ overflow /mo** and **Hrs w/ waste /mo** are *frequency* counts: the number of hours per month where usage exceeds the commitment (overflow) or falls below it (waste). They tell you *how often* overflow or waste occurs — not the duration within an hour. The input data is hourly granularity, so sub-hour breakdown is not available. The dollar magnitude of waste is captured separately in the **Monthly waste (USD)** column.')
+[void]$md.AppendLine('')
+[void]$md.AppendLine('> **⚠ Cost-only basis — this is not Azure''s native recommendation.**')
+[void]$md.AppendLine('> ')
+[void]$md.AppendLine('> * This analysis is built **purely from the hourly PayGo cost** series (`HourlyPayGoUsage`, sourced from `properties.usage.charges`). That column is **cost in USD/hour only** — it does **not** carry the underlying resource *usage* (the consumed quantity of compute/units) that produced the cost.')
+[void]$md.AppendLine('> * Azure''s own Savings Plan recommendations — the `allSavingsBenefitDetails` entries under `properties.allRecommendationDetails` — are computed by the service from **both the cost and the usage that generated it**, not cost alone.')
+[void]$md.AppendLine('> * Because this report optimises against cost only, it is an **approximation** of Azure''s usage-aware recommendation and may, for some workload mixes, point to a different commitment level. Treat the numbers here as **directional**, and cross-check against the `AllRecommendationDetails` export and Azure''s native recommendation before purchasing.')
 [void]$md.AppendLine('')
 [void]$md.AppendLine('## Inputs')
 [void]$md.AppendLine('')
@@ -701,6 +707,7 @@ foreach ($k in $keys) {
 [void]$md.AppendLine('* `K_max_no_waste` is the largest commitment with zero waste in the observed window; future usage dips below the observed minimum will still cause waste.')
 [void]$md.AppendLine('* `K*(d) = quantile(U, d)` is the analytic optimum of `Cost(K)=N·K·(1−d) + Σ max(0, U−K)`.')
 [void]$md.AppendLine('* **Waste (USD)** is the dollar value of unused commitment capacity: for each hour where actual usage `U(h)` is below the commitment `K`, the wasted amount is `(K − U(h)) × (1 − d)`. The `(1 − d)` factor reflects that the commitment is purchased at a discounted rate, so only the discounted portion of the unused capacity is lost. Monthly waste = sum of per-hour waste across all observed hours, scaled to 730.5 h.')
+[void]$md.AppendLine('* **Cost-only basis.** Recommendations here are derived **purely from the hourly PayGo cost** (`HourlyPayGoUsage` = `properties.usage.charges`), which ignores the underlying resource *usage* that created the cost. Azure''s native `allSavingsBenefitDetails` recommendations (under `properties.allRecommendationDetails`) use **both cost and usage**, so this report is an approximation and may suggest a different commitment than Azure''s usage-aware recommendation — cross-check before purchasing.')
 [void]$md.AppendLine('')
 
 $autoName = New-OutputFileName -Entries $metas

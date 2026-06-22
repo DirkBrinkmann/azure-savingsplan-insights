@@ -1,4 +1,4 @@
-v1.2026-06-15.0 Dirk Brinkmann
+v1.2026-06-22.0 Dirk Brinkmann
 
 # Azure Savings Plan Insights
 
@@ -150,7 +150,16 @@ Columns:
 | Column            | Description                                                              |
 |-------------------|--------------------------------------------------------------------------|
 | `DateTime`        | One row per hour across the API-reported data window `[properties.firstConsumptionDate, properties.lastConsumptionDate]` (UTC, hour-truncated). No trailing blanks. |
-| `HourlyPayGoUsage`| Value from `properties.usage.charges`, aligned via `firstConsumptionDate`. |
+| `HourlyPayGoUsage`| Value from `properties.usage.charges`, aligned via `firstConsumptionDate`. This is the **hourly PayGo cost in USD/hour only** — it does **not** include the underlying resource *usage* (consumed quantity) that produced the cost. |
+
+> **⚠ Cost, not usage.** Despite the column name, `HourlyPayGoUsage` is a
+> **cost** series (USD/hour from `usage.charges`), not a consumption-quantity
+> series. Azure's own recommendations under `properties.allRecommendationDetails`
+> (the `allSavingsBenefitDetails` objects) are computed from **both cost and the
+> usage that created it**. Any downstream analysis built purely on this hourly
+> cost column — including `Optimize-SavingsPlanCommitment.ps1` — is therefore an
+> approximation of Azure's usage-aware recommendation. See
+> [Analyzer assumptions and caveats](#analyzer-assumptions-and-caveats).
 
 Example (US format):
 
@@ -508,6 +517,17 @@ the savings figure).
 
 ### Analyzer assumptions and caveats
 
+* **Cost-only basis (not Azure's native recommendation).** The analyzer works
+  **purely from the hourly PayGo cost** (`HourlyPayGoUsage` = `properties.usage.charges`).
+  That series is cost in USD/hour and **ignores the underlying resource usage**
+  (consumed quantity) that produced the cost. Azure's native Savings Plan
+  recommendations — the `allSavingsBenefitDetails` entries under
+  `properties.allRecommendationDetails` — are computed from **both cost and
+  usage**. A recommendation derived from cost alone is therefore an
+  **approximation** and may, for some workload mixes, point to a different
+  commitment than Azure's usage-aware recommendation. Treat the output as
+  **directional** and cross-check against the `AllRecommendationDetails` export
+  and Azure's native recommendation before purchasing.
 * Commitment `K` is treated as **PayGo-equivalent USD/hour**.
 * **Azure SP discounts vary by SKU**, region, and reservation footprint.
   The average discount `d` is a flat blended rate applied to every covered
